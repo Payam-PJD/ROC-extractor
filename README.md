@@ -1,2 +1,2 @@
 # ROC-extractor
- A web-based python for extracting ROC data and sensitivity and specificty from image.
+ A tool for extracting ROC data and sensitivity and specificity from image.
