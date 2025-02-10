@@ -10,6 +10,9 @@ from scipy.signal import savgol_filter
 from sklearn.cluster import KMeans
 from werkzeug.utils import secure_filename
 
+if not os.path.exists('static'):
+    os.makedirs('static')
+
 app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -271,4 +274,4 @@ if __name__ == '__main__':
     import webbrowser
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         webbrowser.open("http://127.0.0.1:5000/")
-    app.run(debug=True)
+    app.run(debug=False)
