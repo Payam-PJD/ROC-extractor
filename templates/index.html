@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ROC Curve Analyzer</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* Dark theme styling */
+    body { background-color: #001f3f; color: #ccc; }
+    .card { background-color: #112; border: none; }
+    .card-header { background-color: #002855; }
+    .btn-primary { background-color: #00509e; border-color: #00509e; }
+    .color-box {
+      width: 50px; height: 50px; margin: 5px; cursor: pointer; border: 2px solid transparent; border-radius: 4px;
+    }
+    .color-box.selected { border: 2px solid #dc3545; }
+    #rawColorContainer img { width: 100px; height: 100px; border-radius: 4px; margin: 5px; cursor: pointer; border: 2px solid transparent; }
+    #rawColorContainer .raw-option.selected { border: 2px solid #198754; }
+    /* ROC chart: white background */
+    #rocChart { max-width: 500px; max-height: 500px; background-color: white; }
+    
+    /* --- Cropping Tool Styles (Optional) --- */
+    #cropContainer {
+      position: relative;
+      display: inline-block;
+      border: 1px solid #ccc;
+      margin-top: 10px;
+    }
+    #sourceImage {
+      display: block;
+      max-width: 100%;
+    }
+    #cropBox {
+      position: absolute;
+      border: 2px dashed #333;
+      cursor: move;
+      box-sizing: border-box;
+    }
+    .resize-handle {
+      position: absolute;
+      width: 15px;
+      height: 15px;
+      background: #333;
+      box-sizing: border-box;
+    }
+    .top-left { left: 0; top: 0; cursor: nw-resize; }
+    .top-right { right: 0; top: 0; cursor: ne-resize; }
+    .bottom-left { left: 0; bottom: 0; cursor: sw-resize; }
+    .bottom-right { right: 0; bottom: 0; cursor: se-resize; }
+    .mid-top { top: 0; left: 50%; transform: translateX(-50%); cursor: n-resize; }
+    .mid-bottom { bottom: 0; left: 50%; transform: translateX(-50%); cursor: s-resize; }
+    .mid-left { left: 0; top: 50%; transform: translateY(-50%); cursor: w-resize; }
+    .mid-right { right: 0; top: 50%; transform: translateY(-50%); cursor: e-resize; }
+    #resultCanvas {
+      display: block;
+      margin-top: 10px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #002855;">
+    <div class="container">
+      <a class="navbar-brand" href="#">ROC Curve Analyzer</a>
+    </div>
+  </nav>
+
+  <div class="container my-4">
+    <!-- Upload Section -->
+    <div class="card mb-4">
+      <div class="card-header">1. Upload Image</div>
+      <div class="card-body">
+        <input type="file" id="imageInput" accept="image/png, image/jpeg" class="form-control mb-3">
+        <button class="btn btn-primary" onclick="uploadImage()">Upload Image</button>
+        <div class="mt-3">
+          <img id="uploadedImage" src="" alt="Uploaded Image" class="img-fluid rounded">
+        </div>
+        <div class="form-check mt-3">
+          <input class="form-check-input" type="checkbox" id="enableCropCheckbox" onchange="toggleCropCard()">
+          <label class="form-check-label" for="enableCropCheckbox">Enable Cropping (optional)</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cropping Section (optional) -->
+    <div class="card mb-4" id="cropCard" style="display:none;">
+      <div class="card-header">Optional Cropping</div>
+      <div class="card-body">
+        <div id="cropContainer">
+          <img id="sourceImage" alt="Image for Cropping" />
+          <div id="cropBox">
+            <div class="resize-handle top-left"></div>
+            <div class="resize-handle top-right"></div>
+            <div class="resize-handle bottom-left"></div>
+            <div class="resize-handle bottom-right"></div>
+            <div class="resize-handle mid-top"></div>
+            <div class="resize-handle mid-bottom"></div>
+            <div class="resize-handle mid-left"></div>
+            <div class="resize-handle mid-right"></div>
+          </div>
+        </div>
+        <button class="btn btn-warning mt-3" id="cropBtn">Crop</button>
+        <canvas id="resultCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Color Extraction Section (Automatic Squaring & Censorship Applied) -->
+    <div class="card mb-4">
+      <div class="card-header">2. Extract Colors</div>
+      <div class="card-body">
+        <label for="numColors" class="form-label">Number of unique colors to extract:</label>
+        <input type="number" id="numColors" value="5" min="3" max="20" class="form-control" style="width: 100px;">
+        <button class="btn btn-primary mt-2" onclick="extractColors()">Extract Colors</button>
+      </div>
+    </div>
+
+    <!-- Color Selection Section -->
+    <div class="card mb-4">
+      <div class="card-header">3. Select the ROC Curve Color</div>
+      <div class="card-body">
+        <div id="colorContainer" class="d-flex flex-wrap"></div>
+        <button class="btn btn-secondary mt-3" onclick="displayRawColorOptions()">Having problem with selecting desired color?</button>
+        <div id="rawColorContainer" class="d-flex flex-wrap mt-2"></div>
+      </div>
+    </div>
+
+    <!-- ROC Preview Section -->
+    <div class="card mb-4">
+      <div class="card-header">4. Preview Extracted ROC Curve</div>
+      <div class="card-body">
+        <button class="btn btn-info" onclick="previewROC()">Preview ROC</button>
+        <canvas id="rocChart" class="mt-3"></canvas>
+      </div>
+    </div>
+
+    <!-- Optimization Options Section -->
+    <div class="card mb-4">
+      <div class="card-header">5. Optimization Options</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label">Choose Optimization Mode:</label>
+          <div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="optMode" value="optimizer" checked onchange="toggleOptMode()">
+              <label class="form-check-label">Optimize by an optimizer</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="optMode" value="target" onchange="toggleOptMode()">
+              <label class="form-check-label">Target a metric</label>
+            </div>
+          </div>
+        </div>
+        <!-- Optimizer Settings -->
+        <div id="optimizerSettings" class="mb-3">
+          <label for="optMethod" class="form-label">Select optimizer method:</label>
+          <select id="optMethod" class="form-select" onchange="toggleAdditionalInputs()">
+            <option value="youden">youden</option>
+            <option value="distance">distance</option>
+            <option value="sensitivity+specificity">sensitivity+specificity</option>
+            <option value="sensitivity*specificity">sensitivity*specificity</option>
+            <option value="accuracy">accuracy</option>
+            <option value="f1_score">f1_score</option>
+          </select>
+        </div>
+        <!-- Target Settings -->
+        <div id="targetSettings" class="mb-3" style="display:none;">
+          <label for="targetMetric" class="form-label">Select target metric:</label>
+          <select id="targetMetric" class="form-select" onchange="toggleAdditionalInputs()">
+            <option value="sensitivity">sensitivity</option>
+            <option value="specificity">specificity</option>
+            <option value="accuracy">accuracy</option>
+            <option value="f1_score">f1_score</option>
+          </select>
+          <div class="mt-2">
+            <label for="targetValue" class="form-label">Target value:</label>
+            <input type="number" id="targetValue" step="0.01" min="0" max="1" class="form-control" style="width: 150px;">
+          </div>
+        </div>
+        <!-- Totals Section (for accuracy and f1_score) -->
+        <div id="totalsSection" class="mb-3" style="display:none;">
+          <label for="totalPositives" class="form-label">Total Positives:</label>
+          <input type="number" id="totalPositives" class="form-control" style="width: 150px;">
+          <label for="totalNegatives" class="form-label mt-2">Total Negatives:</label>
+          <input type="number" id="totalNegatives" class="form-control" style="width: 150px;">
+        </div>
+        <button class="btn btn-primary" onclick="computeOptimal()">Compute Optimal Point</button>
+      </div>
+    </div>
+
+    <!-- Optimal Result Section -->
+    <div class="card mb-4">
+      <div class="card-header">Optimal Point Results</div>
+      <div class="card-body">
+        <p id="optimalResult"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script>
+    let imageUrl = "";
+    let extractedColors = [];
+    let selectedColorIndices = [];
+    let FPR = [];
+    let TPR = [];
+    let rocChart = null;
+    
+    // --- Main Workflow Functions ---
+    function uploadImage() {
+      const inputFile = document.getElementById('imageInput');
+      if (inputFile.files.length === 0) {
+        alert("Please select an image file.");
+        return;
+      }
+      const formData = new FormData();
+      formData.append('image', inputFile.files[0]);
+      fetch('/upload-image', { method: 'POST', body: formData })
+        .then(response => response.json())
+        .then(data => {
+          imageUrl = data.imageUrl;
+          document.getElementById('uploadedImage').src = imageUrl;
+          if(document.getElementById('enableCropCheckbox').checked) {
+            document.getElementById('sourceImage').src = imageUrl;
+          }
+        })
+        .catch(error => console.error('Error:', error));
+    }
+    
+    // --- Automatic Squaring & Censorship ---
+    // Instead of cropping or padding, we simply scale the image to 256x256.
+    // Then we censor all pixels below the diagonal from bottom left to top right.
+    function applyCensorship() {
+      return new Promise((resolve, reject) => {
+        if (!imageUrl) {
+          reject("No image uploaded.");
+          return;
+        }
+        const img = new Image();
+        img.onload = function() {
+          const size = 256;
+          // Scale the image to 256x256 (stretching/compressing).
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, size, size);
+          const imageData = ctx.getImageData(0, 0, size, size);
+          const data = imageData.data;
+          // For a 256x256 image, the diagonal from bottom left to top right is:
+          // y = 255 - x. We want to censor the pixels that are below that diagonal,
+          // i.e. those for which y > (255 - x).
+          for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+              if (y > (size - 1 - x)) {
+                const index = (y * size + x) * 4;
+                data[index] = 255;
+                data[index + 1] = 255;
+                data[index + 2] = 255;
+                data[index + 3] = 255;
+              }
+            }
+          }
+          ctx.putImageData(imageData, 0, 0);
+          imageUrl = canvas.toDataURL();
+          document.getElementById("uploadedImage").src = imageUrl;
+          resolve(imageUrl);
+        };
+        img.onerror = function(err) {
+          reject(err);
+        };
+        img.src = imageUrl;
+      });
+    }
+    
+    // Modify extractColors() to always apply censorship automatically.
+    function extractColors() {
+      if (!imageUrl) {
+        alert("Please upload an image first.");
+        return;
+      }
+      applyCensorship().then(() => {
+        const numColors = document.getElementById('numColors').value;
+        const payload = { imagePath: imageUrl, numColors: numColors };
+        fetch('/extract-colors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => { extractedColors = data.colors; displayColors(); })
+        .catch(error => console.error('Error:', error));
+      }).catch(err => { console.error(err); });
+    }
+    
+    function displayColors() {
+      const container = document.getElementById('colorContainer');
+      container.innerHTML = "<h5>Select the ROC curve color:</h5>";
+      extractedColors.forEach((color, index) => {
+        const colorBox = document.createElement('div');
+        colorBox.className = 'color-box';
+        colorBox.style.backgroundColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+        colorBox.onclick = function() {
+          selectedColorIndices = [index];
+          document.querySelectorAll('.color-box').forEach(box => box.classList.remove('selected'));
+          colorBox.classList.add('selected');
+        };
+        container.appendChild(colorBox);
+      });
+    }
+    
+    function displayRawColorOptions() {
+      if (!imageUrl) {
+        alert("Please upload an image first.");
+        return;
+      }
+      const numColors = document.getElementById('numColors').value;
+      const payload = { imagePath: imageUrl, numColors: numColors };
+      fetch('/display-color-options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(response => response.json())
+      .then(data => {
+        const container = document.getElementById('rawColorContainer');
+        container.innerHTML = "<h5>Raw Color Options</h5>";
+        data.options.forEach(option => {
+          const optionDiv = document.createElement('div');
+          optionDiv.className = 'raw-option me-2 mb-2';
+          optionDiv.innerHTML = `<img src="${option.img}"><br>Color ${option.code}`;
+          optionDiv.onclick = function() {
+            selectedColorIndices = [option.code];
+            document.querySelectorAll('.raw-option').forEach(elem => elem.classList.remove('selected'));
+            optionDiv.classList.add('selected');
+          };
+          container.appendChild(optionDiv);
+        });
+      })
+      .catch(error => console.error('Error:', error));
+    }
+    
+    function plotROC(FPR, TPR, optimalFPR = null, optimalTPR = null) {
+      const dataPoints = FPR.map((f, i) => ({ x: f, y: TPR[i] }));
+      const ctx = document.getElementById('rocChart').getContext('2d');
+      if (rocChart) { rocChart.destroy(); }
+      const rocColor = (selectedColorIndices.length > 0 && extractedColors[selectedColorIndices[0]])
+                        ? `rgb(${extractedColors[selectedColorIndices[0]][0]}, ${extractedColors[selectedColorIndices[0]][1]}, ${extractedColors[selectedColorIndices[0]][2]})`
+                        : 'blue';
+      const datasets = [{
+        label: 'ROC Curve',
+        data: dataPoints,
+        showLine: true,
+        fill: false,
+        borderColor: rocColor,
+        backgroundColor: rocColor,
+        pointRadius: 0
+      }];
+      if (optimalFPR !== null && optimalTPR !== null) {
+        datasets.push({
+          label: 'Optimal Point',
+          data: [{ x: optimalFPR, y: optimalTPR }],
+          backgroundColor: 'red',
+          borderColor: 'red',
+          pointRadius: 6,
+          showLine: false
+        });
+      }
+      rocChart = new Chart(ctx, {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+          scales: {
+            x: { type: 'linear', position: 'bottom', title: { display: true, text: 'False Positive Rate' }, min: 0, max: 1 },
+            y: { title: { display: true, text: 'True Positive Rate' }, min: 0, max: 1 }
+          }
+        }
+      });
+    }
+    
+    function previewROC() {
+      if (selectedColorIndices.length === 0) {
+        alert("Please select a color for the ROC curve.");
+        return;
+      }
+      const numColors = document.getElementById('numColors').value;
+      const payload = { imagePath: imageUrl, selectedColorIndices: selectedColorIndices, numColors: numColors };
+      fetch('/extract-roc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(response => response.json())
+      .then(data => { FPR = data.FPR; TPR = data.TPR; plotROC(FPR, TPR); })
+      .catch(error => console.error('Error:', error));
+    }
+    
+    function toggleOptMode() {
+      const mode = document.querySelector('input[name="optMode"]:checked').value;
+      document.getElementById('optimizerSettings').style.display = (mode === 'optimizer') ? 'block' : 'none';
+      document.getElementById('targetSettings').style.display = (mode === 'target') ? 'block' : 'none';
+      toggleAdditionalInputs();
+    }
+    
+    function toggleAdditionalInputs() {
+      const mode = document.querySelector('input[name="optMode"]:checked').value;
+      let methodOrMetric = (mode === 'optimizer') ? document.getElementById('optMethod').value : document.getElementById('targetMetric').value;
+      document.getElementById('totalsSection').style.display = (methodOrMetric === 'accuracy' || methodOrMetric === 'f1_score') ? 'block' : 'none';
+    }
+    
+    function computeOptimal() {
+      if (selectedColorIndices.length === 0) {
+        alert("Please select a color for the ROC curve.");
+        return;
+      }
+      const numColors = document.getElementById('numColors').value;
+      const mode = document.querySelector('input[name="optMode"]:checked').value;
+      const payload = {
+        imagePath: imageUrl,
+        selectedColorIndices: selectedColorIndices,
+        numColors: numColors,
+        mode: mode,
+        FPR: FPR,
+        TPR: TPR
+      };
+      if (mode === 'optimizer') {
+        payload.method = document.getElementById('optMethod').value;
+        if (payload.method === 'accuracy' || payload.method === 'f1_score') {
+          payload.totalPositives = parseInt(document.getElementById('totalPositives').value);
+          payload.totalNegatives = parseInt(document.getElementById('totalNegatives').value);
+        }
+      } else {
+        payload.targetMetric = document.getElementById('targetMetric').value;
+        payload.targetValue = parseFloat(document.getElementById('targetValue').value);
+        if (payload.targetMetric === 'accuracy' || payload.targetMetric === 'f1_score') {
+          payload.totalPositives = parseInt(document.getElementById('totalPositives').value);
+          payload.totalNegatives = parseInt(document.getElementById('totalNegatives').value);
+        }
+      }
+      const extractPayload = { imagePath: imageUrl, selectedColorIndices: selectedColorIndices, numColors: numColors };
+      fetch('/extract-roc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(extractPayload)
+      })
+      .then(response => response.json())
+      .then(data => {
+        FPR = data.FPR;
+        TPR = data.TPR;
+        payload.FPR = FPR;
+        payload.TPR = TPR;
+        return fetch('/compute-optimal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      })
+      .then(response => response.json())
+      .then(data => {
+        const result = `
+          <strong>Sensitivity:</strong> ${data.optimalSensitivity.toFixed(4)}<br>
+          <strong>Specificity:</strong> ${data.optimalSpecificity.toFixed(4)}<br>
+          <strong>Computed Metric:</strong> ${data.computedMetric.toFixed(4)}
+        `;
+        document.getElementById('optimalResult').innerHTML = result;
+        const optimalFPR = 1 - data.optimalSpecificity;
+        const optimalTPR = data.optimalSensitivity;
+        plotROC(FPR, TPR, optimalFPR, optimalTPR);
+      })
+      .catch(error => console.error('Error:', error));
+    }
+    
+    // --- Cropping Tool Code (Optional) ---
+    function toggleCropCard() {
+      const cropCheckbox = document.getElementById('enableCropCheckbox');
+      const cropCard = document.getElementById('cropCard');
+      if (cropCheckbox.checked) {
+        cropCard.style.display = 'block';
+        document.getElementById('sourceImage').src = imageUrl;
+        initCropTool();
+      } else {
+        cropCard.style.display = 'none';
+      }
+    }
+    
+    let startX = 0, startY = 0;
+    let isDragging = false;
+    let boxX = 50, boxY = 50, boxWidth = 100, boxHeight = 100;
+    let isResizing = false, currentHandle = null;
+    let startBoxX = 0, startBoxY = 0, startBoxWidth = 0, startBoxHeight = 0;
+    let startMouseX = 0, startMouseY = 0;
+    
+    function initCropTool() {
+      boxX = 50;
+      boxY = 50;
+      const sourceImg = document.getElementById("sourceImage");
+      boxWidth = Math.min(100, sourceImg.clientWidth);
+      boxHeight = Math.min(100, sourceImg.clientHeight);
+      clampBox();
+      updateCropBox();
+    }
+    
+    function getImageBounds() {
+      const sourceImg = document.getElementById("sourceImage");
+      return { width: sourceImg.clientWidth, height: sourceImg.clientHeight };
+    }
+    
+    function updateCropBox() {
+      const cropBox = document.getElementById("cropBox");
+      cropBox.style.left = boxX + "px";
+      cropBox.style.top = boxY + "px";
+      cropBox.style.width = boxWidth + "px";
+      cropBox.style.height = boxHeight + "px";
+    }
+    
+    function clampBox() {
+      const bounds = getImageBounds();
+      if (boxX < 0) { boxX = 0; }
+      if (boxY < 0) { boxY = 0; }
+      if (boxWidth < 10) { boxWidth = 10; }
+      if (boxHeight < 10) { boxHeight = 10; }
+      if (boxX + boxWidth > bounds.width) { boxX = bounds.width - boxWidth; }
+      if (boxY + boxHeight > bounds.height) { boxY = bounds.height - boxHeight; }
+    }
+    
+    document.getElementById("cropBox").addEventListener("mousedown", (e) => {
+      if (e.target.classList.contains("resize-handle")) return;
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+    });
+    
+    document.addEventListener("mousemove", (e) => {
+      if (isDragging && !isResizing) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        boxX += dx;
+        boxY += dy;
+        startX = e.clientX;
+        startY = e.clientY;
+        clampBox();
+        updateCropBox();
+      } else if (isResizing) {
+        const dx = e.clientX - startMouseX;
+        const dy = e.clientY - startMouseY;
+        if (currentHandle.classList.contains("top-left")) {
+          boxX = startBoxX + dx;
+          boxY = startBoxY + dy;
+          boxWidth = startBoxWidth - dx;
+          boxHeight = startBoxHeight - dy;
+        } else if (currentHandle.classList.contains("top-right")) {
+          boxY = startBoxY + dy;
+          boxWidth = startBoxWidth + dx;
+          boxHeight = startBoxHeight - dy;
+        } else if (currentHandle.classList.contains("bottom-left")) {
+          boxX = startBoxX + dx;
+          boxWidth = startBoxWidth - dx;
+          boxHeight = startBoxHeight + dy;
+        } else if (currentHandle.classList.contains("bottom-right")) {
+          boxWidth = startBoxWidth + dx;
+          boxHeight = startBoxHeight + dy;
+        } else if (currentHandle.classList.contains("mid-top")) {
+          boxY = startBoxY + dy;
+          boxHeight = startBoxHeight - dy;
+        } else if (currentHandle.classList.contains("mid-bottom")) {
+          boxHeight = startBoxHeight + dy;
+        } else if (currentHandle.classList.contains("mid-left")) {
+          boxX = startBoxX + dx;
+          boxWidth = startBoxWidth - dx;
+        } else if (currentHandle.classList.contains("mid-right")) {
+          boxWidth = startBoxWidth + dx;
+        }
+        if (boxWidth < 10) { boxWidth = 10; }
+        if (boxHeight < 10) { boxHeight = 10; }
+        clampBox();
+        updateCropBox();
+      }
+    });
+    
+    document.addEventListener("mouseup", () => {
+      isDragging = false;
+      isResizing = false;
+      currentHandle = null;
+    });
+    
+    document.querySelectorAll(".resize-handle").forEach(handle => {
+      handle.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        isResizing = true;
+        currentHandle = handle;
+        startBoxX = boxX;
+        startBoxY = boxY;
+        startBoxWidth = boxWidth;
+        startBoxHeight = boxHeight;
+        startMouseX = e.clientX;
+        startMouseY = e.clientY;
+      });
+    });
+    
+    document.getElementById("cropBtn").addEventListener("click", () => {
+      const sourceImg = document.getElementById("sourceImage");
+      const bounds = getImageBounds();
+      const scaleX = sourceImg.naturalWidth / bounds.width;
+      const scaleY = sourceImg.naturalHeight / bounds.height;
+      const sx = boxX * scaleX;
+      const sy = boxY * scaleY;
+      const sw = boxWidth * scaleX;
+      const sh = boxHeight * scaleY;
+      const resultCanvas = document.getElementById("resultCanvas");
+      resultCanvas.width = boxWidth;
+      resultCanvas.height = boxHeight;
+      const ctx = resultCanvas.getContext("2d");
+      ctx.drawImage(sourceImg, sx, sy, sw, sh, 0, 0, boxWidth, boxHeight);
+      imageUrl = resultCanvas.toDataURL();
+      document.getElementById("uploadedImage").src = imageUrl;
+      document.getElementById("cropCard").style.display = "none";
+      document.getElementById("enableCropCheckbox").checked = false;
+    });
+  </script>
+</body>
+</html>
