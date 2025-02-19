@@ -10,10 +10,12 @@ from scipy.signal import savgol_filter
 from sklearn.cluster import KMeans
 from werkzeug.utils import secure_filename
 
+app = Flask(__name__)
+
 if not os.path.exists('static'):
     os.makedirs('static')
 
-app = Flask(__name__)
+
 UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
@@ -271,7 +273,14 @@ def compute_optimal():
         return jsonify({"error": "Unknown mode."}), 400
 
 if __name__ == '__main__':
-    import webbrowser
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        webbrowser.open("http://127.0.0.1:5000/")
-    app.run(debug=False)
+    if os.path.exists('/.dockerenv'):
+        app.run(host='0.0.0.0', port=8080)
+    else:
+        import webbrowser
+        webbrowser.open("http://127.0.0.1:8080/")
+        app.run(host='127.0.0.1', port=8080)
+    
+
+
+    
+
