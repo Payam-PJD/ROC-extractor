@@ -37,7 +37,7 @@ After installing the dependencies, start the Flask development server by running
 ```bash
 python3 app.py
 ```
-This will launch the server and automatically open your default browser at http://127.0.0.1:5000/.
+This will launch the server and automatically open your default browser at http://127.0.0.1:8080/.
 ## Manual
 1. Upload:
  Select and upload an image (PNG or JPEG).
