@@ -23,7 +23,6 @@ The app offers the following features:
    cd ROC-extractor
 
 2. **Install dependencies:**
-<<<<<<< HEAD
     
     -Using pip:
    ```bash
